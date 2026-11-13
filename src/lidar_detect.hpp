@@ -375,6 +375,7 @@ public:
         extract.setIndices(plane_inliers);
         extract.filter(*plane_cloud_);
         ROS_INFO("Plane cloud size: %zu", plane_cloud_->size());
+        ROS_INFO("[DBG] plane coeff: %.4f %.4f %.4f %.4f", plane_coefficients->values[0], plane_coefficients->values[1], plane_coefficients->values[2], plane_coefficients->values[3]);
     
         // 3. 平面点云对齐   
         aligned_cloud_->reserve(plane_cloud_->size());
@@ -479,6 +480,7 @@ public:
                 }
                 error /= inliers->indices.size();
     
+                ROS_INFO("[DBG] cluster pts=%zu inliers=%zu center=(%.3f,%.3f) r=%.3f err=%.4f", cluster->size(), inliers->indices.size(), coefficients->values[0], coefficients->values[1], coefficients->values[2], error);
                 // 如果拟合误差较小，则认为是一个圆洞
                 if (error < 0.025) 
                 {
