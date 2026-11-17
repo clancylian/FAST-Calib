@@ -1,0 +1,7 @@
+# rosbag2 QoS overrides：强制 /left_camera/image 用 reliable 订阅
+# 对应 hik_camera_publisher 的 QoSProfile(depth=5, KEEP_LAST, RELIABLE)
+# 避免默认 best_effort 下 3.9MB 大帧随机丢包
+/left_camera/image:
+  reliability: reliable
+  history: keep_last
+  depth: 10

@@ -11,18 +11,18 @@ which is included as part of this source code package.
 
 int main(int argc, char **argv) 
 {
-    ros::init(argc, argv, "mono_qr_pattern");
-    ros::NodeHandle nh;
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<rclcpp::Node>("mono_qr_pattern");
 
     // 读取参数
-    Params params = loadParameters(nh);
+    Params params = loadParameters(node);
 
     // 初始化 QR 检测和 LiDAR 检测
     QRDetectPtr qrDetectPtr;
-    qrDetectPtr.reset(new QRDetect(nh, params));
+    qrDetectPtr.reset(new QRDetect(node, params));
 
     LidarDetectPtr lidarDetectPtr;
-    lidarDetectPtr.reset(new LidarDetect(nh, params));
+    lidarDetectPtr.reset(new LidarDetect(node, params));
 
     DataPreprocessPtr dataPreprocessPtr;
     dataPreprocessPtr.reset(new DataPreprocess(params));
@@ -30,6 +30,19 @@ int main(int argc, char **argv)
     // 读取图像和点云
     cv::Mat img_input = dataPreprocessPtr->img_input_;
     pcl::PointCloud<Common::Point>::Ptr cloud_input = dataPreprocessPtr->cloud_input_;
+
+    if (img_input.empty())
+    {
+        RCLCPP_ERROR(FC_LOGGER, "Failed to load image, please check image_path parameter.");
+        rclcpp::shutdown();
+        return 1;
+    }
+    if (cloud_input->empty())
+    {
+        RCLCPP_ERROR(FC_LOGGER, "Failed to load point cloud, please check bag_path parameter.");
+        rclcpp::shutdown();
+        return 1;
+    }
     
     // 检测 QR 码
     PointCloud<PointXYZ>::Ptr qr_center_cloud(new PointCloud<PointXYZ>);
@@ -91,72 +104,72 @@ int main(int argc, char **argv)
 
     saveCalibrationResults(params, transformation, colored_cloud, qrDetectPtr->imageCopy_);
 
-    ros::Publisher colored_cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("colored_cloud", 1);
-    ros::Publisher aligned_lidar_centers_pub = nh.advertise<sensor_msgs::PointCloud2>("aligned_lidar_centers", 1);
+    auto colored_cloud_pub = node->create_publisher<sensor_msgs::msg::PointCloud2>("colored_cloud", 1);
+    auto aligned_lidar_centers_pub = node->create_publisher<sensor_msgs::msg::PointCloud2>("aligned_lidar_centers", 1);
 
     // 主循环
-    ros::Rate rate(1);
-    while (ros::ok()) 
+    while (rclcpp::ok()) 
     {
       if (DEBUG) 
       {
         // 发布 QR 检测结果
-        sensor_msgs::PointCloud2 qr_centers_msg;
+        sensor_msgs::msg::PointCloud2 qr_centers_msg;
         pcl::toROSMsg(*qr_centers, qr_centers_msg);
-        qr_centers_msg.header.stamp = ros::Time::now();
+        qr_centers_msg.header.stamp = node->now();
         qr_centers_msg.header.frame_id = "map";
-        qrDetectPtr->qr_pub_.publish(qr_centers_msg);
+        qrDetectPtr->qr_pub_->publish(qr_centers_msg);
 
         // 发布 LiDAR 检测结果
-        sensor_msgs::PointCloud2 lidar_centers_msg;
+        sensor_msgs::msg::PointCloud2 lidar_centers_msg;
         pcl::toROSMsg(*lidar_centers, lidar_centers_msg);
         lidar_centers_msg.header = qr_centers_msg.header;
-        lidarDetectPtr->center_pub_.publish(lidar_centers_msg);
+        lidarDetectPtr->center_pub_->publish(lidar_centers_msg);
 
         // 发布中间结果
-        sensor_msgs::PointCloud2 filtered_cloud_msg;
+        sensor_msgs::msg::PointCloud2 filtered_cloud_msg;
         pcl::toROSMsg(*lidarDetectPtr->getFilteredCloud(), filtered_cloud_msg);
         filtered_cloud_msg.header = qr_centers_msg.header;
-        lidarDetectPtr->filtered_pub_.publish(filtered_cloud_msg);
+        lidarDetectPtr->filtered_pub_->publish(filtered_cloud_msg);
 
-        sensor_msgs::PointCloud2 plane_cloud_msg;
+        sensor_msgs::msg::PointCloud2 plane_cloud_msg;
         pcl::toROSMsg(*lidarDetectPtr->getPlaneCloud(), plane_cloud_msg);
         plane_cloud_msg.header = qr_centers_msg.header;
-        lidarDetectPtr->plane_pub_.publish(plane_cloud_msg);
+        lidarDetectPtr->plane_pub_->publish(plane_cloud_msg);
 
-        sensor_msgs::PointCloud2 aligned_cloud_msg;
+        sensor_msgs::msg::PointCloud2 aligned_cloud_msg;
         pcl::toROSMsg(*lidarDetectPtr->getAlignedCloud(), aligned_cloud_msg);
         aligned_cloud_msg.header = qr_centers_msg.header;
-        lidarDetectPtr->aligned_pub_.publish(aligned_cloud_msg);
+        lidarDetectPtr->aligned_pub_->publish(aligned_cloud_msg);
 
-        sensor_msgs::PointCloud2 edge_cloud_msg;
+        sensor_msgs::msg::PointCloud2 edge_cloud_msg;
         pcl::toROSMsg(*lidarDetectPtr->getEdgeCloud(), edge_cloud_msg);
         edge_cloud_msg.header = qr_centers_msg.header;
-        lidarDetectPtr->edge_pub_.publish(edge_cloud_msg);
+        lidarDetectPtr->edge_pub_->publish(edge_cloud_msg);
 
-        sensor_msgs::PointCloud2 lidar_centers_z0_msg;
+        sensor_msgs::msg::PointCloud2 lidar_centers_z0_msg;
         pcl::toROSMsg(*lidarDetectPtr->getCenterZ0Cloud(), lidar_centers_z0_msg);
         lidar_centers_z0_msg.header = qr_centers_msg.header;
-        lidarDetectPtr->center_z0_pub_.publish(lidar_centers_z0_msg);
+        lidarDetectPtr->center_z0_pub_->publish(lidar_centers_z0_msg);
 
         // 发布外参变换后的LiDAR点云
-        sensor_msgs::PointCloud2 aligned_lidar_centers_msg;
+        sensor_msgs::msg::PointCloud2 aligned_lidar_centers_msg;
         pcl::toROSMsg(*aligned_lidar_centers, aligned_lidar_centers_msg);
         aligned_lidar_centers_msg.header = qr_centers_msg.header;
-        aligned_lidar_centers_pub.publish(aligned_lidar_centers_msg);
+        aligned_lidar_centers_pub->publish(aligned_lidar_centers_msg);
 
         // 发布彩色点云
-        sensor_msgs::PointCloud2 colored_cloud_msg;
+        sensor_msgs::msg::PointCloud2 colored_cloud_msg;
         pcl::toROSMsg(*colored_cloud, colored_cloud_msg);
         colored_cloud_msg.header = qr_centers_msg.header;
-        colored_cloud_pub.publish(colored_cloud_msg);
+        colored_cloud_pub->publish(colored_cloud_msg);
 
         // cv::imshow("result", qrDetectPtr->imageCopy_);
       }
       // cv::waitKey(1);
-      ros::spinOnce();
-      rate.sleep();
+      rclcpp::spin_some(node);
+      std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
+    rclcpp::shutdown();
     return 0;
 }

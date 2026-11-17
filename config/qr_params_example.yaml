@@ -1,35 +1,39 @@
-# Camera intrinsics
-  # 来自 calib_data/camera_pinhole.yaml（hik0406，1440x1080，k3 固定为 0）
-  fx: 522.12351429
-  fy: 522.27515338
-  cx: 773.46643050
-  cy: 534.05316570
-  k1: 0.00324950
-  k2: -0.01710405
-  p1: 0.00066966
-  p2: -0.00035021
+# ROS 2 参数文件示例（复制为 qr_params.yaml 后按需修改）
+/**:
+  ros__parameters:
+    # Camera intrinsics
+      fx: 522.12351429
+      fy: 522.27515338
+      cx: 773.46643050
+      cy: 534.05316570
+      k1: 0.00324950
+      k2: -0.01710405
+      p1: 0.00066966
+      p2: -0.00035021
+      min_detected_markers: 3
 
-# Calibration target parameters
-  # 与官方 CAD 标定板一致；若自行打印，请按实测尺寸修改
-  marker_size: 0.20           # ArUco 码边长 (m)
-  delta_width_qr_center: 0.55 # 左右两个 marker 中心距离的一半 (m)
-  delta_height_qr_center: 0.35 # 上下两个 marker 中心距离的一半 (m)
-  delta_width_circles: 0.5    # 左右两个圆孔中心距离 (m)
-  delta_height_circles: 0.4   # 上下两个圆孔中心距离 (m)
-  circle_radius: 0.12         # 圆孔半径 (m)
+    # Calibration target parameters
+      # 与官方 CAD 标定板一致；若自行打印，请按实测尺寸修改
+      marker_size: 0.20           # ArUco 码边长 (m)
+      delta_width_qr_center: 0.55 # 左右两个 marker 中心距离的一半 (m)
+      delta_height_qr_center: 0.35 # 上下两个 marker 中心距离的一半 (m)
+      delta_width_circles: 0.5    # 左右两个圆孔中心距离 (m)
+      delta_height_circles: 0.4   # 上下两个圆孔中心距离 (m)
+      circle_radius: 0.12         # 圆孔半径 (m)
 
-# Distance filter (示例数据 11/22/33/44，雷达系)
-  x_min: 1.3
-  x_max: 2.4
-  y_min: -1.2
-  y_max: 1.2
-  z_min: -0.2
-  z_max: 1.2
+    # Distance filter (示例数据，雷达系)
+      x_min: 1.3
+      x_max: 2.4
+      y_min: -1.2
+      y_max: 1.2
+      z_min: -0.2
+      z_max: 1.2
 
-# Input
-  lidar_topic: "/livox/lidar"
-  bag_path: "$(find fast_calib)/calib_data/scene1.bag"
-  image_path: "$(find fast_calib)/calib_data/scene1.png"
+    # Input
+      # bag_path 必须是 ros2 bag record 生成的目录（ROS 1 的 .bag 无法读取）
+      lidar_topic: "/livox/lidar"
+      bag_path: "/home/ztl/PointPanoramaTex/lidar_cam_extr_calib/FAST-Calib/calib_data/scene1"
+      image_path: "/home/ztl/PointPanoramaTex/lidar_cam_extr_calib/FAST-Calib/calib_data/scene1.png"
 
-# Output
-  output_path: "$(find fast_calib)/output"
+    # Output
+      output_path: "/home/ztl/PointPanoramaTex/lidar_cam_extr_calib/FAST-Calib/output"

@@ -1,35 +1,40 @@
-# Camera intrinsics
-  # 来自 calib_data/camera_pinhole.yaml（hik0406，1440x1080，k3 固定为 0）
-  fx: 7.0863125924497740e+02
-  fy: 7.0871513587278127e+02
-  cx: 6.4449372682521789e+02
-  cy: 4.9588359175254533e+02
-  k1: 5.4466418090825280e-02
-  k2: -4.5147373415016401e-02
-  p1: 8.5461102120314711e-06
-  p2: 1.0486594840736336e-03
+# ROS 2 参数文件（由 calib.launch.py / multi_calib.launch.py 加载）
+/**:
+  ros__parameters:
+    # Camera intrinsics
+      # 来自 calib_data/camera_pinhole.yaml（hik0406，1440x1080，k3 固定为 0）
+      fx: 7.0863125924497740e+02
+      fy: 7.0871513587278127e+02
+      cx: 6.4449372682521789e+02
+      cy: 4.9588359175254533e+02
+      k1: 5.4466418090825280e-02
+      k2: -4.5147373415016401e-02
+      p1: 8.5461102120314711e-06
+      p2: 1.0486594840736336e-03
+      min_detected_markers: 3
 
-# Calibration target parameters
-  # 与官方 CAD 标定板一致；若自行打印，请按实测尺寸修改
-  marker_size: 0.20           # ArUco 码边长 (m)
-  delta_width_qr_center: 0.55 # 左右两个 marker 中心距离的一半 (m)
-  delta_height_qr_center: 0.35 # 上下两个 marker 中心距离的一半 (m)
-  delta_width_circles: 0.5    # 左右两个圆孔中心距离 (m)
-  delta_height_circles: 0.4   # 上下两个圆孔中心距离 (m)
-  circle_radius: 0.12         # 圆孔半径 (m)
+    # Calibration target parameters
+      # 与官方 CAD 标定板一致；若自行打印，请按实测尺寸修改
+      marker_size: 0.20           # ArUco 码边长 (m)
+      delta_width_qr_center: 0.55 # 左右两个 marker 中心距离的一半 (m)
+      delta_height_qr_center: 0.35 # 上下两个 marker 中心距离的一半 (m)
+      delta_width_circles: 0.5    # 左右两个圆孔中心距离 (m)
+      delta_height_circles: 0.4   # 上下两个圆孔中心距离 (m)
+      circle_radius: 0.12         # 圆孔半径 (m)
 
-# Distance filter (scene1 2026-11-11 14:18 采集，板面 x1.86~2.34 y-0.74~0.83 z0.09~1.67, 后仰15.8°)
-  x_min: 1.2
-  x_max: 2.0
-  y_min: -0.85
-  y_max: 0.92
-  z_min: 0.12
-  z_max: 1.72
+    # Distance filter (scene1 2026-11-11 14:18 采集，板面 x1.86~2.34 y-0.74~0.83 z0.09~1.67, 后仰15.8°)
+      x_min: 1.2
+      x_max: 2.0
+      y_min: -0.85
+      y_max: 0.92
+      z_min: 0.12
+      z_max: 1.72
 
-# Input
-  lidar_topic: "/livox/lidar"
-  bag_path: "$(find fast_calib)/calib_data/scene4.bag"
-  image_path: "$(find fast_calib)/calib_data/scene4.png"
+    # Input
+      # bag_path 必须是 ros2 bag record 生成的目录（ROS 1 的 .bag 文件无法读取）
+      lidar_topic: "/livox/lidar"
+      bag_path: ""
+      image_path: ""
 
-# Output
-  output_path: "$(find fast_calib)/output"
+    # Output
+      output_path: "/home/ztl/PointPanoramaTex/lidar_cam_extr_calib/FAST-Calib/output"

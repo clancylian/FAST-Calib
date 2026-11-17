@@ -7,19 +7,26 @@ which is included as part of this source code package.
 
 #ifndef DATA_PREPROCESS_HPP
 #define DATA_PREPROCESS_HPP
+#define PCL_NO_PRECOMPILE
 
-#include "CustomMsg.h"
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp/serialization.hpp>
+#include <rosbag2_cpp/readers/sequential_reader.hpp>
+#include <rosbag2_cpp/converter_options.hpp>
+#include <rosbag2_storage/storage_options.hpp>
+#include <rosbag2_storage/serialized_bag_message.hpp>
+#include <livox_ros_driver2/msg/custom_msg.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <Eigen/Core>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <ros/ros.h>
-#include <rosbag/bag.h>
-#include <rosbag/view.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <sensor_msgs/point_cloud2_iterator.h>
+#include <filesystem>
 #include <fstream>
+#include <memory>
+#include <unordered_map>
 #include "common_lib.h"
 
 using namespace std;
@@ -50,74 +57,113 @@ public:
         img_input_ = cv::imread(image_path, cv::IMREAD_UNCHANGED);
         if (img_input_.empty())
         {
-            std::string msg = "Loading the image " + image_path + " failed";
-            ROS_ERROR_STREAM(msg.c_str());
+            RCLCPP_ERROR(FC_LOGGER, "加载图像失败: %s", image_path.c_str());
             return;
         }
 
-        // 先检查包是否存在
-        std::fstream file_;
-        file_.open(bag_path, ios::in);
-        if (!file_)
+        if (bag_path.empty())
         {
-            std::string msg = "Loading the rosbag " + bag_path + " failed";
-            ROS_ERROR_STREAM(msg.c_str());
+            RCLCPP_ERROR(FC_LOGGER, "未指定 bag_path，请通过 --ros-args -p bag_path:=<ros2 bag 目录> 传入");
             return;
         }
-        ROS_INFO("Loading the rosbag %s", bag_path.c_str());
-
-        rosbag::Bag bag;
-        try {
-            bag.open(bag_path, rosbag::bagmode::Read);
-        } catch (rosbag::BagException &e) {
-            ROS_ERROR_STREAM("LOADING BAG FAILED: " << e.what());
+        if (!std::filesystem::exists(bag_path))
+        {
+            RCLCPP_ERROR(FC_LOGGER, "bag 不存在: %s", bag_path.c_str());
+            return;
+        }
+        if (std::filesystem::is_regular_file(bag_path))
+        {
+            RCLCPP_ERROR(FC_LOGGER,
+                "%s 是 ROS 1 的 .bag 文件，rosbag2 无法读取。请用 ros2 bag record 重新录制（会生成同名目录）",
+                bag_path.c_str());
             return;
         }
 
-        std::vector<string> lidar_topic_vec = {lidar_topic};
-        rosbag::View view(bag, rosbag::TopicQuery(lidar_topic_vec));
+        RCLCPP_INFO(FC_LOGGER, "Loading the rosbag %s", bag_path.c_str());
+
+        rosbag2_storage::StorageOptions storage_options;
+        storage_options.uri = bag_path;
+        storage_options.storage_id = "sqlite3";
+
+        rosbag2_cpp::ConverterOptions converter_options;
+        converter_options.input_serialization_format = "cdr";
+        converter_options.output_serialization_format = "cdr";
+
+        rosbag2_cpp::readers::SequentialReader reader;
+        try
+        {
+            reader.open(storage_options, converter_options);
+        }
+        catch (const std::exception &e)
+        {
+            RCLCPP_ERROR(FC_LOGGER, "LOADING BAG FAILED: %s", e.what());
+            return;
+        }
+
+        // rosbag2 Humble 的 SerializedBagMessage 不带类型信息，需从 metadata 查询
+        std::unordered_map<std::string, std::string> topic_types;
+        for (const auto &topic : reader.get_all_topics_and_types())
+        {
+            topic_types[topic.name] = topic.type;
+        }
 
         // 累计读取
-        for (const rosbag::MessageInstance &m : view)
+        while (reader.has_next())
         {
+            auto bag_message = reader.read_next();
+            if (bag_message->topic_name != lidar_topic) continue;
+
+            const auto type_it = topic_types.find(bag_message->topic_name);
+            const std::string msg_type = (type_it != topic_types.end()) ? type_it->second : "";
+
+            rclcpp::SerializedMessage serialized_msg(*bag_message->serialized_data);
+
             // 1) Livox 自定义消息（含 line 字段）
-            if (auto livox_custom_msg = m.instantiate<livox_ros_driver::CustomMsg>())
+            if (msg_type == "livox_ros_driver2/msg/CustomMsg")
             {
+                rclcpp::Serialization<livox_ros_driver2::msg::CustomMsg> serialization;
+                livox_ros_driver2::msg::CustomMsg custom_msg;
+                serialization.deserialize_message(&serialized_msg, &custom_msg);
+
                 lidar_type_ = LiDARType::Solid;
-                cloud_input_->reserve(livox_custom_msg->point_num);
-                for (uint32_t i = 0; i < livox_custom_msg->point_num; ++i)
+                cloud_input_->reserve(cloud_input_->size() + custom_msg.point_num);
+                for (uint32_t i = 0; i < custom_msg.point_num && i < custom_msg.points.size(); ++i)
                 {
                     Common::Point p;
-                    p.x = livox_custom_msg->points[i].x;
-                    p.y = livox_custom_msg->points[i].y;
-                    p.z = livox_custom_msg->points[i].z;
-                    // Livox 的 CustomPoint 有 line 字段（uint8 / uint16 视版本而定）
-                    p.ring = static_cast<std::uint16_t>(livox_custom_msg->points[i].line);
+                    p.x = custom_msg.points[i].x;
+                    p.y = custom_msg.points[i].y;
+                    p.z = custom_msg.points[i].z;
+                    // Livox 的 CustomPoint 有 line 字段（uint8）
+                    p.ring = static_cast<std::uint16_t>(custom_msg.points[i].line);
                     cloud_input_->push_back(p);
                 }
                 continue;
             }
 
             // 2) 机械雷达 / 通用 PointCloud2
-            if (auto pcl_msg = m.instantiate<sensor_msgs::PointCloud2>())
+            if (msg_type == "sensor_msgs/msg/PointCloud2")
             {
+                rclcpp::Serialization<sensor_msgs::msg::PointCloud2> serialization;
+                sensor_msgs::msg::PointCloud2 pcl_msg;
+                serialization.deserialize_message(&serialized_msg, &pcl_msg);
+
                 // 优先判断是否有 ring 字段
                 bool has_ring = false;
-                for (const auto &f : pcl_msg->fields)
+                for (const auto &f : pcl_msg.fields)
                 {
                     if (f.name == "ring") { has_ring = true; break; }
                 }
 
                 // 使用 iterator 安全读取
-                sensor_msgs::PointCloud2ConstIterator<float> it_x(*pcl_msg, "x");
-                sensor_msgs::PointCloud2ConstIterator<float> it_y(*pcl_msg, "y");
-                sensor_msgs::PointCloud2ConstIterator<float> it_z(*pcl_msg, "z");
+                sensor_msgs::PointCloud2ConstIterator<float> it_x(pcl_msg, "x");
+                sensor_msgs::PointCloud2ConstIterator<float> it_y(pcl_msg, "y");
+                sensor_msgs::PointCloud2ConstIterator<float> it_z(pcl_msg, "z");
 
                 // ring 可能不存在：不存在时用 0xFFFF 表示未知
                 std::unique_ptr<sensor_msgs::PointCloud2ConstIterator<std::uint16_t>> it_ring_ptr;
                 if (has_ring)
                 {
-                    it_ring_ptr.reset(new sensor_msgs::PointCloud2ConstIterator<std::uint16_t>(*pcl_msg, "ring"));
+                    it_ring_ptr.reset(new sensor_msgs::PointCloud2ConstIterator<std::uint16_t>(pcl_msg, "ring"));
                     lidar_type_ = LiDARType::Mech;
                 }
                 else
@@ -125,10 +171,8 @@ public:
                     lidar_type_ = LiDARType::Solid;
                 }
 
-                const size_t n = static_cast<size_t>(pcl_msg->width) * pcl_msg->height;
-                cloud_input_->reserve(n);
-
-                // cout << "Loading PointCloud2 with " << n << " points. Has ring: " << has_ring << endl;
+                const size_t n = static_cast<size_t>(pcl_msg.width) * pcl_msg.height;
+                cloud_input_->reserve(cloud_input_->size() + n);
 
                 for (size_t i = 0; i < n; ++i, ++it_x, ++it_y, ++it_z)
                 {
@@ -142,8 +186,6 @@ public:
                         // 解引用 ring 迭代器并前进
                         p.ring = **it_ring_ptr;
                         ++(*it_ring_ptr);
-                        // if (i % 32 == 0) cout << "ring: " << p.ring << endl;
-                        // if (i % 32 == 1) cout << "ring: " << p.ring << endl;
                     }
                     else
                     {
@@ -158,7 +200,7 @@ public:
             // 其他类型忽略
         }
 
-        ROS_INFO("Loaded %zu points from the rosbag.", cloud_input_->size());
+        RCLCPP_INFO(FC_LOGGER, "Loaded %zu points from the rosbag.", cloud_input_->size());
     }
 };
 

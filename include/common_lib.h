@@ -9,13 +9,14 @@ which is included as part of this source code package.
 #define COMMON_LIB_H
 #define PCL_NO_PRECOMPILE
 
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/filters/extract_indices.h>
+#include <pcl/filters/passthrough.h>
 #include <pcl/common/transforms.h>
-#include <pcl_ros/point_cloud.h>
-#include <pcl_ros/filters/passthrough.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/features/boundary.h>
@@ -26,12 +27,13 @@ which is included as part of this source code package.
 #include <pcl/registration/transformation_estimation_svd.h>
 #include <cmath>
 #include <opencv2/opencv.hpp>
-#include <tf/tf.h>
 #include "color.h"
 
 using namespace std;
 using namespace cv;
 using namespace pcl;
+
+#define FC_LOGGER rclcpp::get_logger("fast_calib")
 
 #define TARGET_NUM_CIRCLES 4
 #define DEBUG 1
@@ -68,33 +70,37 @@ struct Params {
 };
 
 // 读取参数
-Params loadParameters(ros::NodeHandle &nh) {
+Params loadParameters(const rclcpp::Node::SharedPtr &node) {
   Params params;
-  nh.param("fx", params.fx, 1215.31801774424);
-  nh.param("fy", params.fy, 1214.72961288138);
-  nh.param("cx", params.cx, 1047.86571859677);
-  nh.param("cy", params.cy, 745.068353101898);
-  nh.param("k1", params.k1, -0.33574781188503);
-  nh.param("k2", params.k2, 0.10996870793601);
-  nh.param("p1", params.p1, 0.000157303079833973);
-  nh.param("p2", params.p2, 0.000544930726278493);
-  nh.param("marker_size", params.marker_size, 0.2);
-  nh.param("delta_width_qr_center", params.delta_width_qr_center, 0.55);
-  nh.param("delta_height_qr_center", params.delta_height_qr_center, 0.35);
-  nh.param("delta_width_circles", params.delta_width_circles, 0.5);
-  nh.param("delta_height_circles", params.delta_height_circles, 0.4);
-  nh.param("min_detected_markers", params.min_detected_markers, 3);
-  nh.param("circle_radius", params.circle_radius, 0.12);
-  nh.param("image_path", params.image_path, string("/home/chunran/calib_ws/src/fast_calib/data/image.png"));
-  nh.param("bag_path", params.bag_path, string("/home/chunran/calib_ws/src/fast_calib/data/input.bag"));
-  nh.param("lidar_topic", params.lidar_topic, string("/livox/lidar"));
-  nh.param("output_path", params.output_path, string("/home/chunran/calib_ws/src/fast_calib/output"));
-  nh.param("x_min", params.x_min, 1.5);
-  nh.param("x_max", params.x_max, 3.0);
-  nh.param("y_min", params.y_min, -1.5);
-  nh.param("y_max", params.y_max, 2.0);
-  nh.param("z_min", params.z_min, -0.5);
-  nh.param("z_max", params.z_max, 2.0);
+  auto get_double = [&node](const std::string &name, double def) {
+    return node->declare_parameter<double>(name, def);
+  };
+
+  params.fx = get_double("fx", 1215.31801774424);
+  params.fy = get_double("fy", 1214.72961288138);
+  params.cx = get_double("cx", 1047.86571859677);
+  params.cy = get_double("cy", 745.068353101898);
+  params.k1 = get_double("k1", -0.33574781188503);
+  params.k2 = get_double("k2", 0.10996870793601);
+  params.p1 = get_double("p1", 0.000157303079833973);
+  params.p2 = get_double("p2", 0.000544930726278493);
+  params.marker_size = get_double("marker_size", 0.2);
+  params.delta_width_qr_center = get_double("delta_width_qr_center", 0.55);
+  params.delta_height_qr_center = get_double("delta_height_qr_center", 0.35);
+  params.delta_width_circles = get_double("delta_width_circles", 0.5);
+  params.delta_height_circles = get_double("delta_height_circles", 0.4);
+  params.min_detected_markers = node->declare_parameter<int>("min_detected_markers", 3);
+  params.circle_radius = get_double("circle_radius", 0.12);
+  params.image_path = node->declare_parameter<std::string>("image_path", "");
+  params.bag_path = node->declare_parameter<std::string>("bag_path", "");
+  params.lidar_topic = node->declare_parameter<std::string>("lidar_topic", "/livox/lidar");
+  params.output_path = node->declare_parameter<std::string>("output_path", "output");
+  params.x_min = get_double("x_min", 1.5);
+  params.x_max = get_double("x_max", 3.0);
+  params.y_min = get_double("y_min", -1.5);
+  params.y_max = get_double("y_max", 2.0);
+  params.z_min = get_double("z_min", -0.5);
+  params.z_max = get_double("z_max", 2.0);
   return params;
 }
 
